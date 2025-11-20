@@ -7,7 +7,15 @@ package-mode = false
 
 [tool.poetry.dependencies]
 python = "^3.13"
-aiohttp = "^3.9.0"
+pandas = "^2.2.0"
+numpy = "^1.26.0"
+yfinance = "^0.2.36"
+requests = "^2.31.0"
+scipy = "^1.12.0"
+statsmodels = "^0.14.1"
+matplotlib = "^3.8.2"
+python-dotenv = "^1.0.1"
+
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
