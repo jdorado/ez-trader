@@ -8,3 +8,11 @@ services:
     env_file:
       - .env
     command: tail -f /dev/null  # Keep container running for development
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+

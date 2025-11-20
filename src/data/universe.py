@@ -9,8 +9,13 @@ class UniverseLoader:
     def get_high_beta_tickers() -> List[str]:
         """
         Returns a manually curated list of high-beta / volatile tickers.
+        Includes lower-priced names for smaller accounts (MARA, CLSK, SOFI, etc).
         """
-        return ["NVDA", "TSLA", "AMD", "COIN", "MSTR", "MARA", "PLTR", "NET", "ROKU", "SQ", "SHOP", "AFRM", "UPST"]
+        return [
+            "NVDA", "TSLA", "AMD", "COIN", "MSTR", # High Price
+            "MARA", "PLTR", "NET", "ROKU", "SQ", "SHOP", "AFRM", "UPST", # Mid Price
+            "CLSK", "RIOT", "SOFI", "HOOD", "DKNG", "OPEN" # Low Price (<$20)
+        ]
 
     @staticmethod
     def get_nasdaq_100() -> List[str]:

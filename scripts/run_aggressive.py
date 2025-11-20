@@ -1,6 +1,8 @@
 import sys
 import os
+import concurrent.futures
 from datetime import datetime
+from typing import List, Dict, Any
 
 # Add project root to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -9,10 +11,132 @@ from src.data.yfinance_loader import YahooFinanceLoader
 from src.data.options_loader import OptionsLoader
 from src.strategies.volatility import VolatilityStrategy
 from src.core.market_regime import MarketRegime
+from src.data.universe import UniverseLoader
+from src.core.safety import CorporateActionChecker
+from src.core.cache_manager import CacheManager
 from src.utils.logger import logger
 
+# Global instances to be shared across threads (if thread-safe) or re-instantiated
+# yfinance and our loaders should be thread-safe for read operations
+loader = YahooFinanceLoader()
+opt_loader = OptionsLoader()
+safety_checker = CorporateActionChecker()
+cache = CacheManager()
+
+def analyze_ticker(ticker: str, multipliers: Dict[str, float]) -> List[Dict[str, Any]]:
+    """
+    Analyzes a single ticker for volatility breakouts.
+    """
+    try:
+        # 0. Check Cache for Safety Result (Optimization)
+        # Safety checks involve API calls, so caching them is good.
+        safety_key = f"safety:{ticker}:{datetime.now().date()}"
+        safety = cache.get(safety_key)
+        
+        if not safety:
+            safety = safety_checker.check_safety(ticker)
+            cache.set(safety_key, safety, ttl_seconds=3600*12) # Cache for 12 hours
+
+        if not safety['safe']:
+            # logger.warning(f"Skipping {ticker}: {safety['reason']}") # Too noisy for parallel
+            return []
+
+        # 1. Fetch Data (with Cache)
+        # We'll cache the dataframe for a short period (e.g. 5 mins) to allow re-runs
+        data_key = f"data:{ticker}:history"
+        data = cache.get(data_key)
+        
+        if data is None:
+            data = loader.get_historical_data(ticker, start_date="2023-01-01")
+            if not data.empty:
+                cache.set(data_key, data, ttl_seconds=300) # 5 min cache
+        
+        if data is None or data.empty:
+            return []
+
+        # 2. Run Strategy
+        strategy = VolatilityStrategy(ticker, lookback_window=20, z_score_threshold=1.5)
+        strategy.on_data({ticker: data})
+        
+        raw_signals = strategy.generate_signals()
+        valid_signals = []
+        
+        for sig in raw_signals:
+            action = sig['action']
+            mult = multipliers['long'] if action == 'BUY' else multipliers['short']
+            
+            if mult > 0:
+                sig['allocation'] *= mult
+                
+                # 3. Find Option (Heavy API call, do only if signal valid)
+                option_type = 'call' if action == 'BUY' else 'put'
+                expiry = opt_loader.get_nearest_expiration(ticker, min_days=2)
+                
+                if expiry:
+                    chain = opt_loader.get_option_chain(ticker, expiry)
+                    options_df = chain['calls'] if option_type == 'call' else chain['puts']
+                    
+                    if not options_df.empty:
+                        current_price = loader.get_latest_price(ticker)
+                        options_df['abs_diff'] = abs(options_df['strike'] - current_price)
+                        atm_option = options_df.sort_values('abs_diff').iloc[0]
+                        
+                        contract_symbol = atm_option['contractSymbol']
+                        strike = atm_option['strike']
+                        last_price = atm_option['lastPrice']
+                        
+                        contract_cost = last_price * 100
+                        allocation = sig.get('allocation', 0.0)
+                        
+                        # --- Smart Contract Selector ---
+                        # If ATM is too expensive, look for OTM strikes
+                        if contract_cost > allocation:
+                            # logger.info(f"ATM too expensive (${contract_cost:.2f} > ${allocation:.2f}). Searching OTM...")
+                            
+                            # Filter for cheaper options
+                            # For Puts: Strike < Current Price
+                            # For Calls: Strike > Current Price
+                            if option_type == 'call':
+                                candidates = options_df[options_df['strike'] > current_price].sort_values('strike')
+                            else:
+                                candidates = options_df[options_df['strike'] < current_price].sort_values('strike', ascending=False)
+                            
+                            found_cheaper = False
+                            for _, row in candidates.iterrows():
+                                cost = row['lastPrice'] * 100
+                                if cost > 0 and cost <= allocation:
+                                    # Found a candidate!
+                                    # TODO: Check Delta here if we had Greeks. For now, just take the first one (closest OTM)
+                                    contract_symbol = row['contractSymbol']
+                                    strike = row['strike']
+                                    last_price = row['lastPrice']
+                                    contract_cost = cost
+                                    found_cheaper = True
+                                    # logger.info(f"Found OTM Candidate: Strike {strike} @ ${last_price:.2f}")
+                                    break
+                            
+                            if not found_cheaper:
+                                # Still couldn't find one
+                                continue
+
+                        if contract_cost > 0:
+                            quantity = int(allocation // contract_cost)
+                            if quantity > 0:
+                                sig['contract'] = contract_symbol
+                                sig['expiry'] = expiry
+                                sig['strike'] = strike
+                                sig['option_price'] = last_price
+                                sig['quantity'] = quantity
+                                sig['option_type'] = option_type
+                                valid_signals.append(sig)
+        return valid_signals
+
+    except Exception as e:
+        logger.error(f"Error analyzing {ticker}: {e}")
+        return []
+
 def run_aggressive_analysis():
-    logger.info("--- Starting Aggressive Strategy Analysis (100x Goal) ---")
+    logger.info("--- Starting Aggressive Strategy Analysis (Parallel) ---")
     
     # 0. Check Market Regime
     regime_analyzer = MarketRegime()
@@ -28,105 +152,42 @@ def run_aggressive_analysis():
         logger.warning("Market Regime is DANGEROUS (Cash Only). Aborting Aggressive Scans.")
         return
 
-    # 1. Load Data
-    loader = YahooFinanceLoader()
-    opt_loader = OptionsLoader()
-    
-    # Use UniverseLoader to get tickers
-    from src.data.universe import UniverseLoader
+    # 1. Get Universe
     tickers = UniverseLoader.get_combined_universe()
-    
-    logger.info(f"Scanning Expanded Universe ({len(tickers)} tickers): {tickers}")
-    
-    for ticker in tickers:
-        try:
-            # Fetch Data
-            data = loader.get_historical_data(ticker, start_date="2023-01-01")
-            if data.empty:
-                continue
-                
-            # Run Volatility Strategy
-            strategy = VolatilityStrategy(ticker, lookback_window=20, z_score_threshold=1.5)
-            
-            # We need to apply the correct multiplier based on the SIGNAL direction, 
-            # but we don't know the signal yet. 
-            # Solution: Pass the multipliers to the strategy or apply them after signal generation.
-            # For now, let's generate signals first, then resize.
-            
-            strategy.on_data({ticker: data})
-            
-            raw_signals = strategy.generate_signals()
-            signals = []
-            
-            for sig in raw_signals:
-                action = sig['action']
-                mult = multipliers['long'] if action == 'BUY' else multipliers['short']
-                
-                if mult > 0:
-                    # Adjust allocation by multiplier
-                    sig['allocation'] *= mult
-                    signals.append(sig)
-                else:
-                    logger.info(f"Skipping {action} signal on {ticker} due to Regime (Mult=0.0)")
-            
-            if signals:
-                for signal in signals:
-                    logger.info(f"🔥 SIGNAL FOUND: {signal}")
-                    
-                    # 2. Find Option Contract
-                    action = signal['action']
-                    # If BUY signal -> Call, If SELL signal -> Put
-                    option_type = 'call' if action == 'BUY' else 'put'
-                    
-                    # Get nearest expiration (e.g., > 2 days out to avoid 0DTE risk for now)
-                    expiry = opt_loader.get_nearest_expiration(ticker, min_days=2)
-                    
-                    if expiry:
-                        logger.info(f"Targeting Expiry: {expiry}")
-                        chain = opt_loader.get_option_chain(ticker, expiry)
-                        options_df = chain['calls'] if option_type == 'call' else chain['puts']
-                        
-                        if not options_df.empty:
-                            # Find ATM Option
-                            current_price = loader.get_latest_price(ticker)
-                            # Find strike closest to current price
-                            options_df['abs_diff'] = abs(options_df['strike'] - current_price)
-                            atm_option = options_df.sort_values('abs_diff').iloc[0]
-                            
-                            contract_symbol = atm_option['contractSymbol']
-                            strike = atm_option['strike']
-                            last_price = atm_option['lastPrice']
-                            
-                            # Calculate Quantity based on Option Price (x100 multiplier)
-                            # Allocation is in Dollars. Contract Cost = Price * 100.
-                            contract_cost = last_price * 100
-                            allocation = signal.get('allocation', 0.0)
-                            
-                            if contract_cost > 0:
-                                quantity = int(allocation // contract_cost)
-                                # Ensure at least 1 contract if allocation allows (or maybe we skip if too expensive?)
-                                if quantity == 0 and allocation > contract_cost * 0.5:
-                                     # Aggressive: If we have >50% of the cash needed, maybe we take it? 
-                                     # For now, strict check.
-                                     pass
-                            else:
-                                quantity = 0
-                            
-                            if quantity > 0:
-                                logger.tweet(f"AGGRESSIVE PLAY: {action} {ticker} | Vol Breakout | Buy {expiry} ${strike} {option_type.upper()} @ ${last_price:.2f} | Qty: {quantity} | Alloc: ${allocation:.2f}")
-                            else:
-                                logger.warning(f"Option too expensive for allocation. Cost: ${contract_cost:.2f}, Alloc: ${allocation:.2f}")
-                        else:
-                            logger.warning(f"No options found for {expiry}")
-                    else:
-                        logger.warning(f"No valid expiration found for {ticker}")
-            else:
-                logger.info(f"No volatility signal for {ticker}")
-                
-        except Exception as e:
-            logger.error(f"Error analyzing {ticker}: {e}")
+    logger.info(f"Scanning Expanded Universe ({len(tickers)} tickers) with ThreadPool...")
 
-    logger.info("--- Aggressive Analysis Complete ---")
+    # 2. Parallel Execution
+    start_time = datetime.now()
+    all_signals = []
+    
+    # Initialize Memo Generator
+    from src.utils.trade_memo import TradeMemoGenerator
+    memo_gen = TradeMemoGenerator()
+    
+    # Use max_workers=10 to avoid rate limiting (yfinance/yahoo can be strict)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Submit all tasks
+        future_to_ticker = {executor.submit(analyze_ticker, ticker, multipliers): ticker for ticker in tickers}
+        
+        for future in concurrent.futures.as_completed(future_to_ticker):
+            ticker = future_to_ticker[future]
+            try:
+                signals = future.result()
+                if signals:
+                    all_signals.extend(signals)
+                    for sig in signals:
+                        # Generate Memo
+                        memo_path = memo_gen.generate_memo(sig, regime)
+                        logger.info(f"📝 Memo Generated: {memo_path}")
+                        
+                        logger.tweet(f"AGGRESSIVE PLAY: {sig['action']} {sig['ticker']} | Vol Breakout | Buy {sig['expiry']} ${sig['strike']} {sig['option_type'].upper()} @ ${sig['option_price']:.2f} | Qty: {sig['quantity']} | Alloc: ${sig['allocation']:.2f}")
+                        logger.tweet(f"👉 Review Memo: {memo_path}")
+            except Exception as exc:
+                logger.error(f"{ticker} generated an exception: {exc}")
+
+    duration = datetime.now() - start_time
+    logger.info(f"--- Aggressive Analysis Complete in {duration} ---")
+    logger.info(f"Total Signals Found: {len(all_signals)}")
 
 if __name__ == "__main__":
     run_aggressive_analysis()
