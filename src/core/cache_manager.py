@@ -12,6 +12,9 @@ class CacheManager:
     """
     
     def __init__(self, host: str = 'redis', port: int = 6379, db: int = 0):
+        from dotenv import load_dotenv
+        load_dotenv()
+        
         # Allow overriding via env vars
         host = os.getenv('REDIS_HOST', host)
         port = int(os.getenv('REDIS_PORT', port))

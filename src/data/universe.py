@@ -14,7 +14,12 @@ class UniverseLoader:
         return [
             "NVDA", "TSLA", "AMD", "COIN", "MSTR", # High Price
             "MARA", "PLTR", "NET", "ROKU", "SQ", "SHOP", "AFRM", "UPST", # Mid Price
-            "CLSK", "RIOT", "SOFI", "HOOD", "DKNG", "OPEN" # Low Price (<$20)
+            "CLSK", "RIOT", "SOFI", "HOOD", "DKNG", "OPEN", # Low Price (<$20)
+            # --- Phase 2 Expansion ---
+            "BITF", "HIVE", "HUT", "IBIT", # Crypto Proxies
+            "XBI", "SMH", "ARKK", # Volatile ETFs
+            "CVNA", "GME", "AMC", # High Short Interest / Meme
+            "BABA", "PDD", "JD" # China Tech
         ]
 
     @staticmethod

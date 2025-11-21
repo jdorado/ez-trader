@@ -37,7 +37,7 @@ class TradeMemoGenerator:
 ## 1. The Thesis 🧐
 *   **Direction**: {trade_signal['action']} ({trade_signal['option_type'].upper()})
 *   **Catalyst**: Volatility Breakout (Z-Score > 1.5).
-*   **Market Regime**: {market_regime['state'].value} (VIX: {market_regime['details'].get('vix', 'N/A')})
+*   **Market Regime**: {market_regime['state'].value} (VIX: {market_regime.get('vix', 'N/A')})
 *   **Rationale**: The system detected an idiosyncratic move in {ticker} that diverges from the broader market, or aligns with a crash regime.
 
 ## 2. The Instrument 🎻

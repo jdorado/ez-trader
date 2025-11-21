@@ -1,0 +1,4 @@
+2025-11-21 08:20:45,312 - INFO - --- 🌍 Global Market Heatmap ---
+TICKER   PRICE      CHG %    RANGE %  Z-SCORE  VOL (20d)  STATUS    
+----------------------------------------------------------------------
+Warning: No data found for SQ

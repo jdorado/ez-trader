@@ -164,8 +164,8 @@ def run_aggressive_analysis():
     from src.utils.trade_memo import TradeMemoGenerator
     memo_gen = TradeMemoGenerator()
     
-    # Use max_workers=10 to avoid rate limiting (yfinance/yahoo can be strict)
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+    # Use max_workers=1 to avoid rate limiting (yfinance/yahoo can be strict)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
         # Submit all tasks
         future_to_ticker = {executor.submit(analyze_ticker, ticker, multipliers): ticker for ticker in tickers}
         

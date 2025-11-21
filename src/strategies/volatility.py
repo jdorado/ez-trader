@@ -10,7 +10,7 @@ class VolatilityStrategy(Strategy):
     Uses Kelly Criterion for position sizing.
     """
     
-    def __init__(self, ticker: str, lookback_window: int = 20, z_score_threshold: float = 2.0):
+    def __init__(self, ticker: str, lookback_window: int = 20, z_score_threshold: float = 1.5):
         super().__init__("VolatilityBreakout", {'lookback': lookback_window, 'threshold': z_score_threshold})
         self.ticker = ticker
         self.lookback = lookback_window
@@ -48,6 +48,11 @@ class VolatilityStrategy(Strategy):
             return []
             
         z_score = (current_return - rolling_mean) / rolling_std
+        
+        # Store for debugging/reporting
+        self.last_z_score = z_score
+        self.last_volatility = rolling_std
+
         
         signals = []
         price = close_prices.iloc[-1]
