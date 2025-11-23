@@ -34,9 +34,40 @@ class UniverseLoader:
         ]
         
     @staticmethod
+    def get_systematic_universe() -> List[str]:
+        """
+        Returns tickers from the latest systematic scan report.
+        """
+        import pandas as pd
+        import os
+        
+        # Path relative to project root (assuming this runs from root or src)
+        # We'll try a few common paths to be robust
+        paths = [
+            "reports/systematic_universe.csv",
+            "../reports/systematic_universe.csv",
+            "/Users/jdorado/dev/ez-stocks/reports/systematic_universe.csv"
+        ]
+        
+        for path in paths:
+            if os.path.exists(path):
+                try:
+                    df = pd.read_csv(path)
+                    if 'Ticker' in df.columns:
+                        return df['Ticker'].tolist()
+                except Exception as e:
+                    print(f"Error reading systematic universe from {path}: {e}")
+        
+        return []
+
+    @staticmethod
     def get_combined_universe() -> List[str]:
         """
         Returns unique tickers from all lists.
         """
-        tickers = set(UniverseLoader.get_high_beta_tickers() + UniverseLoader.get_nasdaq_100())
+        tickers = set(
+            UniverseLoader.get_high_beta_tickers() + 
+            UniverseLoader.get_nasdaq_100() +
+            UniverseLoader.get_systematic_universe()
+        )
         return list(tickers)

@@ -9,7 +9,39 @@ class PolygonLoader(DataLoader):
     
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv("POLYGON_API_KEY")
-        self.base_url = "https://api.polygon.io"
+        self.base_url = os.getenv("POLYGON_BASE_URL", "https://api.polygon.io")
+
+    def fetch_universe(self, limit: int = 100) -> list[str]:
+        """
+        Fetch top tickers by market cap (or default sort) from the API.
+        """
+        if not self.api_key:
+            print("Polygon API Key not set.")
+            return []
+
+        url = f"{self.base_url}/v3/reference/tickers"
+        params = {
+            "market": "stocks",
+            "active": "true",
+            "limit": limit,
+            "apiKey": self.api_key
+        }
+        
+        try:
+            print(f"Fetching universe from {self.base_url}...")
+            response = requests.get(url, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                results = data.get('results', [])
+                tickers = [item['ticker'] for item in results]
+                print(f"Found {len(tickers)} tickers.")
+                return tickers
+            else:
+                print(f"Error fetching universe: {response.status_code} - {response.text}")
+                return []
+        except Exception as e:
+            print(f"Error calling API: {e}")
+            return []
 
     def get_historical_data(self, ticker: str, start_date: str, end_date: Optional[str] = None, interval: str = "1d") -> pd.DataFrame:
         # Mapping interval to polygon format

@@ -18,6 +18,8 @@ Follow this checklist every trading day to ensure systematic execution and macro
     - Review overnight moves and general market sentiment.
 
 ## 3. 🔎 Market Scan
+- [ ] **Run Systematic Scan**: `python scripts/run_systematic_scan.py`
+    - Discovers fresh high-beta candidates.
 - [ ] **Run Aggressive Scan**: `python scripts/run_aggressive.py`
     - **Note**: If OPEX day, ensure `min_days=2` to avoid 0DTE risk.
     - **Review Memos**: Check `memos/trades/` for new signals.

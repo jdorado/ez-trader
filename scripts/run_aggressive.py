@@ -1,6 +1,7 @@
 import sys
 import os
 import concurrent.futures
+import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Any
 
@@ -122,12 +123,40 @@ def analyze_ticker(ticker: str, multipliers: Dict[str, float]) -> List[Dict[str,
                         if contract_cost > 0:
                             quantity = int(allocation // contract_cost)
                             if quantity > 0:
+                                # --- IV Check ---
+                                # Calculate HV (Annualized)
+                                returns = data['Close'].pct_change().dropna()
+                                hv_series = returns.rolling(window=20).std().iloc[-1] * (252 ** 0.5)
+                                
+                                # Ensure float
+                                hv = float(hv_series.iloc[0]) if isinstance(hv_series, pd.Series) else float(hv_series)
+                                
+                                # Get IV
+                                iv = opt_loader.get_atm_iv(ticker, expiry)
+                                
+                                iv_hv_ratio = 0.0
+                                if hv > 0:
+                                    iv_hv_ratio = iv / hv
+                                
+                                logger.info(f"🔍 {ticker} IV Analysis: IV={iv:.2%} HV={hv:.2%} Ratio={iv_hv_ratio:.2f}")
+
+                                # Filter Logic
+                                if iv_hv_ratio > 1.5:
+                                    logger.warning(f"⚠️ SKIPPING {ticker}: IV ({iv:.2%}) is too high relative to HV ({hv:.2%}). Ratio: {iv_hv_ratio:.2f}")
+                                    continue
+                                    
                                 sig['contract'] = contract_symbol
                                 sig['expiry'] = expiry
                                 sig['strike'] = strike
                                 sig['option_price'] = last_price
                                 sig['quantity'] = quantity
                                 sig['option_type'] = option_type
+                                
+                                # Add Metadata for Memo
+                                sig['iv'] = iv
+                                sig['hv'] = hv
+                                sig['iv_hv_ratio'] = iv_hv_ratio
+                                
                                 valid_signals.append(sig)
         return valid_signals
 

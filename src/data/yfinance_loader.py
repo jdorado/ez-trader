@@ -2,13 +2,24 @@ import yfinance as yf
 import pandas as pd
 from typing import Optional
 from src.data.data_loader import DataLoader
+import threading
+
+# Global lock for yfinance calls - yfinance has internal state that's not thread-safe
+_yf_lock = threading.Lock()
 
 class YahooFinanceLoader(DataLoader):
     """Data loader using yfinance."""
 
     def get_historical_data(self, ticker: str, start_date: str, end_date: Optional[str] = None, interval: str = "1d") -> pd.DataFrame:
         try:
-            data = yf.download(ticker, start=start_date, end=end_date, interval=interval, progress=False)
+            # Lock required due to yfinance's internal caching, not GIL
+            with _yf_lock:
+                data = yf.download(ticker, start=start_date, end=end_date, interval=interval, progress=False, auto_adjust=False)
+            
+            # Flatten MultiIndex columns if present (e.g. (Price, Ticker) -> Price)
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+                
             if data.empty:
                 print(f"Warning: No data found for {ticker}")
             return data
