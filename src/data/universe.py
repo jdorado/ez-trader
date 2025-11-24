@@ -13,7 +13,7 @@ class UniverseLoader:
         """
         return [
             "NVDA", "TSLA", "AMD", "COIN", "MSTR", # High Price
-            "MARA", "PLTR", "NET", "ROKU", "SQ", "SHOP", "AFRM", "UPST", # Mid Price
+            "MARA", "PLTR", "NET", "ROKU", "SHOP", "AFRM", "UPST", # Mid Price
             "CLSK", "RIOT", "SOFI", "HOOD", "DKNG", "OPEN", # Low Price (<$20)
             # --- Phase 2 Expansion ---
             "BITF", "HIVE", "HUT", "IBIT", # Crypto Proxies

@@ -204,15 +204,28 @@ def run_aggressive_analysis():
                 signals = future.result()
                 if signals:
                     all_signals.extend(signals)
-                    for sig in signals:
-                        # Generate Memo
-                        memo_path = memo_gen.generate_memo(sig, regime)
-                        logger.info(f"📝 Memo Generated: {memo_path}")
-                        
-                        logger.tweet(f"AGGRESSIVE PLAY: {sig['action']} {sig['ticker']} | Vol Breakout | Buy {sig['expiry']} ${sig['strike']} {sig['option_type'].upper()} @ ${sig['option_price']:.2f} | Qty: {sig['quantity']} | Alloc: ${sig['allocation']:.2f}")
-                        logger.tweet(f"👉 Review Memo: {memo_path}")
             except Exception as exc:
                 logger.error(f"{ticker} generated an exception: {exc}")
+
+    # 3. Filter and Process Top Signals
+    if all_signals:
+        # Sort by IV/HV Ratio (Ascending = Better Value)
+        # We want low IV relative to HV.
+        all_signals.sort(key=lambda x: x.get('iv_hv_ratio', 999.0))
+        
+        # Limit to Top 5
+        top_signals = all_signals[:5]
+        logger.info(f"Filtering {len(all_signals)} signals down to Top {len(top_signals)} based on IV/HV Ratio.")
+        
+        for sig in top_signals:
+            # Generate Memo
+            memo_path = memo_gen.generate_memo(sig, regime)
+            logger.info(f"📝 Memo Generated: {memo_path}")
+            
+            logger.tweet(f"AGGRESSIVE PLAY: {sig['action']} {sig['ticker']} | Vol Breakout | Buy {sig['expiry']} ${sig['strike']} {sig['option_type'].upper()} @ ${sig['option_price']:.2f} | Qty: {sig['quantity']} | Alloc: ${sig['allocation']:.2f}")
+            logger.tweet(f"👉 Review Memo: {memo_path}")
+    else:
+        logger.info("No valid signals found.")
 
     duration = datetime.now() - start_time
     logger.info(f"--- Aggressive Analysis Complete in {duration} ---")

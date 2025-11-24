@@ -33,8 +33,8 @@ class PolygonLoader(DataLoader):
             if response.status_code == 200:
                 data = response.json()
                 results = data.get('results', [])
-                tickers = [item['ticker'] for item in results]
-                print(f"Found {len(tickers)} tickers.")
+                tickers = [item['ticker'] for item in results if '.' not in item['ticker']]
+                print(f"Found {len(tickers)} tickers (after filtering).")
                 return tickers
             else:
                 print(f"Error fetching universe: {response.status_code} - {response.text}")

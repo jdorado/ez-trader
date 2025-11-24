@@ -30,6 +30,7 @@ Our system is built on a strict quantitative framework designed to survive marke
 ### 3. Risk Management (The Engine)
 *   **Kelly Criterion**: Position sizing is mathematically optimized based on win probability and edge.
 *   **Hard Cap**: Max **10%** risk per trade. No "YOLO" bets.
+*   **Daily Limit**: Maximum **3 tickers** per day to maintain focus and avoid over-diversification.
 *   **Regime Filter**:
     *   🟢 **Bullish**: Full Size Longs.
     *   🔴 **Bearish**: Cash or Puts Only.
